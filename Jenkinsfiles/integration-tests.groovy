@@ -16,7 +16,7 @@ def functional_test(browser, hub_name, base_dir) {
                 " py.test tests/functional" +
                 " --driver Remote" +
                 " --capability browserName ${browser}" +
-                " --host hub" +
+                " --host ${hub_name}" +
                 " --base-url='${config.job.base_url}'" +
                 " --junit-prefix=${browser}" +
                 " --junit-xml=/test_results/functional-${browser}.xml" +
@@ -33,27 +33,30 @@ def functional_test(browser, hub_name, base_dir) {
 
       try {
         // Create named nodes
-        dockerRun("selenium/node-${browser}:${config.job.selenium}",
-                  ["docker_args": "-d" +
-                                  " --name ${node_name}" +
-                                  " --link ${hub_name}:hub"])
+        // dockerRun("selenium/node-${browser}:${config.job.selenium}",
+        //           ["docker_args": "-d" +
+        //                           " --name ${node_name}" +
+        //                           " --link ${hub_name}:hub"])
+
+        sh "docker run -d --net grid --name ${node_name} -e HUB_HOST=${hub_name} -v /dev/shm:/dev/shm selenium/node-${browser}:${config.job.selenium}"
 
         try {
             // Timeout after 7 minutes, if in-container timeout fails
             timeout(time: 7, unit: 'MINUTES') {
                 // Run test node
-                dockerRun("kuma-integration-tests:${GIT_COMMIT_SHORT}",
-                          ["docker_args": "--link ${hub_name}:hub" +
-                                          " --name ${test_name}" +
-                                          " --volume ${base_dir}/test_results:/test_results" +
-                                          " --user ${UID}",
-                           "cmd": cmd])
+                // dockerRun("kuma-integration-tests:${GIT_COMMIT_SHORT}",
+                //           ["docker_args": "--link ${hub_name}:hub" +
+                //                           " --name ${test_name}" +
+                //                           " --volume ${base_dir}/test_results:/test_results" +
+                //                           " --user ${UID}",
+                //            "cmd": cmd])
+                sh "docker run --net grid --name ${test_name} -e HUB_HOST=${hub_name} --user ${UID} --volume ${base_dir}/test_results:/test_results kuma-integration-tests:${GIT_COMMIT_SHORT} ${cmd}"
             }
         } finally {
             dockerStop(test_name)
         }
       } finally {
-        dockerStop("${node_name}")
+        dockerStop(node_name)
       }
     }
   }
@@ -88,8 +91,7 @@ stage('Test') {
     def nick =  "ci-bot"
     try {
         // Setup the selenium hub
-        dockerRun("selenium/hub:${config.job.selenium}",
-                  ["docker_args": "-d --name ${hub_name}"])
+        sh "docker network create grid && docker run -d -p 4444:4444 --net grid --name ${hub_name} selenium/hub:${config.job.selenium}"
 
         try {
             // Run the tests in parallel
@@ -109,8 +111,10 @@ stage('Test') {
             throw err
         } finally {
             dockerStop(hub_name)
+            sh "docker network prune --force"
         }
     } finally {
         dockerStop(hub_name)
+        sh "docker network prune --force"
     }
 }
