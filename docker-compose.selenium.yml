@@ -1,0 +1,18 @@
+version: '3.5'
+services:
+    selenium:
+        image: selenium/standalone-${BROWSER:-chrome}:${SELENIUM_IMAGE_TAG:-latest}
+        shm_size: "2g"
+        expose:
+            - "4444"
+
+    tests:
+        build:
+            context: .
+            dockerfile: docker/images/integration-tests/Dockerfile
+        volumes:
+            - ./:/app:z
+        depends_on:
+            - selenium
+        user: ${UID:-1000}
+        command: timeout --preserve-status ${TIMEOUT:-6m} ${PYTEST_COMMAND}
